@@ -83,9 +83,7 @@ services:
     image: hyperledger/sawtooth-shell:chime
     container_name: sawtooth-shell-default
     volumes:
-      - ./simplewallet:/simplewallet:rw
-      - ./LandRegistry:/LandRegistry:rw
-      - ./NFT:/NFT:rw      
+      - ./LandRegistry:/LandRegistry:rw   
     depends_on:
       - rest-api
     entrypoint: "bash -c \"\

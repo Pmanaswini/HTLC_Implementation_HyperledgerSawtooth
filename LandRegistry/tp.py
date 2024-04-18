@@ -35,9 +35,9 @@ def _hash(data):
 class LandRegistryTransactionHandler(TransactionHandler):
     def __init__(self, namespace_prefix):
         self._namespace_prefix = namespace_prefix
-        self.start_time=0
-        self.end_time=0
-        self.h=""
+        #for locking all the transactions
+        self.locks=[]
+
     @property
     def family_name(self):
         return FAMILY_NAME
@@ -67,6 +67,8 @@ class LandRegistryTransactionHandler(TransactionHandler):
             self.LockAsset_LandResgistry(payload, context)
         elif data['operation'] =='ClaimAsset':
             self.ClaimAsset_LandResgistry(payload, context)
+        elif data['operation'] =='RefundAsset':
+            self.RefundAsset_LandResgistry(payload, context)
         else:
             raise InvalidTransaction('Invalid transaction type')
 
@@ -74,25 +76,17 @@ class LandRegistryTransactionHandler(TransactionHandler):
         data = json.loads(payload)
         reg_no = data['reg_no']
         owner = data['owner']
-        #data['owner']="Neha"
+
 
         LOGGER.info(f"Creating LandRegistry: reg_no={reg_no}, owner={owner}")
 
         if _get_LandRegistry(context, reg_no) is not None:
             raise InvalidTransaction(f"Registry no. {reg_no} already exists for owner {owner}")
-        #setting time
-        #self.start_time=time.time()
-        #LOGGER.info(f"time starts at:{time.strftime("%H:%M:%S")}")
-        LOGGER.info(f"time starts at:{self.start_time}")
-
+        
         _set_LandRegistry(context, reg_no, data)
     
     def setPrice_LandRegistry(self, payload, context):
-        #checking price updation happening within preiod of time or not
-        self.end_time=time.time()
-        #LOGGER.info(f"time end at:{self.end_time}")
-        #if self.start_time-self.end_time>0.2:
-            #raise InvalidTransaction(f"Time Limit exceed you have to perform price update within 20 seconds,you used time:{self.start_time-self.end_time}")
+        
         data = json.loads(payload)
         reg_no = data['reg_no']
         price = data['setPrice']
@@ -135,12 +129,55 @@ class LandRegistryTransactionHandler(TransactionHandler):
         reg_no = data['reg_no']
         owner = data['owner']
         key = data['private_key']
+        new_owner_smc=data['new_owner_smc']
+        current_time=int(time.time())
+        time_limit=data['time_limit']
+        total_time=current_time+int(time_limit)
         LOGGER.info("Locking the asset")
         LandRegistry = _get_LandRegistry(context, reg_no)
         if LandRegistry is None:
             raise InvalidTransaction(f"Registry no. {reg_no} does not exist")
-        self.h=hashlib.sha256(key.encode('utf-8')).hexdigest()
+        #self.h.append([reg_no,hashlib.sha256(key.encode('utf-8')).hexdigest()])
+
+        self.locks.append([reg_no,key,new_owner_smc,total_time])
+        LOGGER.info(f'all locks:{self.locks}')
+        LandRegistry['owner'] = new_owner_smc
+        LandRegistry['private_key'] = new_owner_smc
         LOGGER.info(f"Asset reg No:{reg_no} locked of the {owner}")
+        _set_LandRegistry(context, reg_no, LandRegistry)
+
+    
+    def RefundAsset_LandResgistry(self,payload,context):
+        data = json.loads(payload)
+        reg_no = data['reg_no']
+        new_owner = data['new_owner']
+        key = data['private_key']
+        current_owner_smc=data['current_owner_smc']
+        current_time=int(time.time())
+        LandRegistry = _get_LandRegistry(context, reg_no)
+        if LandRegistry is None:
+            raise InvalidTransaction(f"Registry no. {reg_no} does not exist")
+        #self.h.append([reg_no,hashlib.sha256(key.encode('utf-8')).hexdigest()])
+        if len(self.locks)==0:
+            LOGGER.info(f"No Asset is locked in the Blockchain")
+        else:
+            Flag=0
+            for lock in self.locks:
+                if lock[0:3]==[reg_no,_hash(key.encode('utf-8'))[0:64],current_owner_smc]:
+                    if current_time<lock[3]:
+                        LOGGER.info(f'you can not refund the asset before time limit exceed,you have to wait for {lock[3]-current_time} seconds from current time')
+                        raise InvalidTransaction(f"Time Limit not exceed you have to wait for {lock[3]-current_time} seconds to refund the asset")
+                    Flag=1
+                    LandRegistry['owner'] = new_owner
+                    LandRegistry['private_key'] = key
+                    LOGGER.info("Refunding the asset")
+                    LOGGER.info(f"Asset -refunded reg No:{reg_no} claimed by the {new_owner}")
+                    self.locks.remove(lock)
+                    _set_LandRegistry(context, reg_no, LandRegistry)
+                    break
+            if Flag==0:
+                LOGGER.info(f"Asset reg No:{reg_no} is not refounded by the {new_owner} Due to wrong secret key or wrong owner_smc")
+                raise InvalidTransaction(f"Wrong Secret key")
 
     def ClaimAsset_LandResgistry(self,payload,context):
         data = json.loads(payload)
@@ -148,19 +185,33 @@ class LandRegistryTransactionHandler(TransactionHandler):
         new_owner = data['new_owner']
         key = data['secret_key']
         private_key = data['private_key']
-        #private_key = data['private_key']
+        current_time=int(time.time())
+        current_owner_smc=data['current_owner_smc']
         LandRegistry = _get_LandRegistry(context, reg_no)
         if LandRegistry is None:
             raise InvalidTransaction(f"Registry no. {reg_no} does not exist")
         #checking the given secret key is correct or not
-        if self.h==hashlib.sha256(key.encode('utf-8')).hexdigest():
-            LandRegistry['owner'] = new_owner
-            LandRegistry['private_key'] = private_key
-            LOGGER.info(f"Asset reg No:{reg_no} claimed by the {new_owner}")
-            _set_LandRegistry(context, reg_no, LandRegistry)
+        if len(self.locks)==0:
+            LOGGER.info(f"No Asset is locked in the Blockchain")
+        
         else:
-            LOGGER.info(f"Asset reg No:{reg_no} not claimed by the {new_owner}")
-
+            LOGGER.info(f"available locks:{self.locks}")
+            Flag=0
+            for lock in self.locks:
+                if lock[0:3]==[reg_no,_hash(key.encode('utf-8'))[0:64],current_owner_smc]:
+                    if current_time>lock[3]:
+                        LOGGER.info(f"Asset reg No:{reg_no} not claimed by the {new_owner} Due to time limit exceed")
+                        raise InvalidTransaction(f"Time Limit exceed you have to cliam the asset within given time,you used time:{current_time-lock[3]}")
+                    Flag=1
+                    LandRegistry['owner'] = new_owner
+                    LandRegistry['private_key'] = private_key
+                    LOGGER.info(f"Asset reg No:{reg_no} claimed by the {new_owner}")
+                    self.locks.remove(lock)
+                    _set_LandRegistry(context, reg_no, LandRegistry)
+                    break
+            if Flag==0:
+                LOGGER.info(f"Asset reg No:{reg_no} not claimed by the {new_owner} Due to wrong secret key or wrong owner_smc")
+                raise InvalidTransaction(f"Wrong Secret key")
 #################MY CODE ENDS#################
 
 
@@ -181,26 +232,6 @@ def _set_LandRegistry(context, reg_no, LandRegistry):
     state_change.value = json.dumps(LandRegistry).encode()
 
     context.set_state({state_change.address: state_change.value})
-
-
-
-def transferOwnership(self, payload, context):
-        data = json.loads(payload)
-        reg_no = data['reg_no']
-        new_owner = data['new_owner']
-        private_key = data['private_key']
-
-        LandRegistry = _get_LandRegistry(context, reg_no)
-        if LandRegistry is None:
-            raise InvalidTransaction(f"Registry no. {reg_no} does not exist")
-
-        # Verify ownership
-        if LandRegistry['owner'] != private_key:
-            raise InvalidTransaction("Unauthorized access")
-
-        # Update owner
-        LandRegistry['owner'] = new_owner
-        _set_LandRegistry(context, reg_no, LandRegistry)
 
 
 

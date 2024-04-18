@@ -10,6 +10,7 @@ from sawtooth_signing import ParseError
 from sawtooth_signing.secp256k1 import Secp256k1PrivateKey
 from sawtooth_sdk.protobuf.transaction_pb2 import TransactionHeader, Transaction
 from sawtooth_sdk.protobuf.batch_pb2 import Batch, BatchHeader, BatchList
+import time
 
 NAMESPACE = hashlib.sha512('LandRegistry'.encode('utf-8')).hexdigest()[0:6]
 URL='http://rest-api:8008'
@@ -99,9 +100,9 @@ def create_LandRegistry(reg_no, det, owner, private_key, url):
         
 
         # Submit the batch to the validator
-        print("batcher_publickey:",publicKey_temp)
-        print("transaction details:",transaction)
-        print("Registered successfully in LandRegistry")
+        #print("batcher_publickey:",publicKey_temp)
+        #print("transaction details:",transaction)
+        print("Land Registered successfully in LandRegistry")
         print("generated id:",NAMESPACE + reg_no)
         submit_batch(url, batch_list_bytes)
 
@@ -257,17 +258,19 @@ def buyPrice_LandRegistry(reg_no, price,new_owner, private_key, url):
     submit_batch(url, batch_list_bytes)
 
 #########My code starts####################
-def LockAsset_LandRegistry(reg_no, owner, private_key, url):
+def LockAsset_LandRegistry(reg_no, owner, private_key,new_owner_smc, url,time_limit):
     # Prepare the transaction payload
     payload = {
         'operation':'LockAsset',    
         'reg_no': reg_no,
         'owner': owner,
-        'private_key':private_key
+        'private_key':_hash(private_key.encode('utf-8'))[0:64],
+        'new_owner_smc':new_owner_smc,
+        'time_limit':time_limit
     }
     LandRegistry = get_LandRegistry(reg_no, URL)
     print("land details:",LandRegistry)
-    if LandRegistry['owner']!=owner:
+    if LandRegistry['private_key']!=private_key:
          print("Unauthorized Access")
          return
     print(f"Land being locked successfully by {owner}")
@@ -326,19 +329,88 @@ def LockAsset_LandRegistry(reg_no, owner, private_key, url):
     submit_batch(url, batch_list_bytes)
 
 
-def ClaimAsset_LandRegistry(reg_no, new_owner, private_key, secret_key, url):
+def ClaimAsset_LandRegistry(reg_no, new_owner, private_key, secret_key,current_owner_smc, url):
     # Prepare the transaction payload
     payload = {
         'operation':'ClaimAsset',    
         'reg_no': reg_no,
         'new_owner': new_owner,
         'private_key':private_key,
-        'secret_key':secret_key
+        'secret_key':secret_key,
+        'current_owner_smc':current_owner_smc
     }
     LandRegistry = get_LandRegistry(reg_no, URL)
     if LandRegistry is None:
          print("LandRegistry not found")
          return
+    print("Request sent to Validator for Claiming the Asset")
+    reg_no=_hash(reg_no.encode('utf-8'))[0:64]
+    file_temp= open(_get_keyfile(private_key))
+    privateKeyStr= file_temp.read().strip()
+    privateKey = Secp256k1PrivateKey.from_hex(privateKeyStr)
+    signer = CryptoFactory(create_context('secp256k1')) \
+            .new_signer(privateKey)
+    publicKey = signer.get_public_key().as_hex()
+
+    file_temp= open(_get_keyfile("client"))
+    #file_temp= open(_get_keyfile(new_owner))
+    privateKeyStr= file_temp.read().strip()
+    private_temp = Secp256k1PrivateKey.from_hex(privateKeyStr)
+    signer_temp = CryptoFactory(create_context('secp256k1')) \
+            .new_signer(private_temp)
+    publicKey_temp = signer_temp.get_public_key().as_hex()
+
+    # Create a transaction header
+    transaction_header = TransactionHeader(
+        signer_public_key=publicKey,
+        family_name='LandRegistry',
+        family_version='1.0',
+        inputs=[NAMESPACE + reg_no],
+        outputs=[NAMESPACE + reg_no],
+        dependencies=[],
+        payload_sha512=hashlib.sha512(json.dumps(payload).encode()).hexdigest(),
+        batcher_public_key=publicKey_temp,
+        nonce='').SerializeToString()
+
+    # Create a transaction
+    transaction = Transaction(
+        header=transaction_header,
+        payload=json.dumps(payload).encode(),
+        header_signature=signer.sign(transaction_header))
+
+    # Create a batch header
+    batch_header = BatchHeader(
+        signer_public_key=publicKey_temp,
+        transaction_ids=[transaction.header_signature]).SerializeToString()
+
+    # Create a batch
+    batch = Batch(
+        header=batch_header,
+        transactions=[transaction],
+        header_signature=signer_temp.sign(batch_header))
+        
+        
+    batch_list = BatchList(batches=[batch])
+
+    
+    batch_list_bytes = batch_list.SerializeToString()
+    submit_batch(url, batch_list_bytes)
+
+
+def RefundAsset_LandRegistry(reg_no, new_owner, private_key,current_owner_smc,url):
+    # Prepare the transaction payload
+    payload = {
+        'operation':'RefundAsset',    
+        'reg_no': reg_no,
+        'new_owner': new_owner,
+        'private_key':private_key,
+        'current_owner_smc':current_owner_smc
+    }
+    LandRegistry = get_LandRegistry(reg_no, URL)
+    if LandRegistry is None:
+         print("LandRegistry not found")
+         return
+    print("Request sent to Validator for Refunding the Asset")
     reg_no=_hash(reg_no.encode('utf-8'))[0:64]
     file_temp= open(_get_keyfile(private_key))
     privateKeyStr= file_temp.read().strip()
@@ -425,38 +497,19 @@ def submit_batch(url, batch_list_bytes):
     except BaseException as err:
             raise Exception(err)
     
-def get_transaction_history(reg_no, url):
-    reg_no_hash = _hash(reg_no.encode('utf-8'))[0:64]
-    response = requests.get(f'{url}/blocks?reverse=true')
-    data = response.json()
-
-    if 'data' not in data:
-        print(f"Unexpected response format: {data}")
-        return []
-
-    transaction_history = []
-    for block in data['data']:
-        for txn in block['batches'][0]['transactions']:
-            if reg_no_hash in txn['header']['inputs'] or reg_no_hash in txn['header']['outputs']:
-                transaction_history.append({
-                    'block_id': block['header_signature'],
-                    'transaction_id': txn['header_signature'],
-                    'timestamp': block['header']['timestamp'],
-                    'payload': txn['payload']
-                })
-
-    return transaction_history
-
 
 def main():
     parser = argparse.ArgumentParser(description='LandRegistry Client')
-    parser.add_argument('action', choices=['register', 'setPrice','buyPrice', 'getDetails','LockAsset','ClaimAsset','getTransactionHistory'], help='LandRegistry action')
+    parser.add_argument('action', choices=['register', 'setPrice','buyPrice', 'getDetails','LockAsset','ClaimAsset','RefundAsset'], help='LandRegistry action')
     parser.add_argument('--reg-no', help='registry no.')
     parser.add_argument('--det', help='Land details no.')    
     parser.add_argument('--owner', help='Owner')
     parser.add_argument('--new-owner', help='New owner')
     parser.add_argument('--private-key', help='Private key')
+    parser.add_argument('--new-owner-smc', help='New owner smc')
     parser.add_argument('--secret-key', help='Secret key')
+    parser.add_argument('--current-owner-smc', help='current Smart contract owner name')
+    parser.add_argument('--time-limit', help='Time limit for the transaction')
     parser.add_argument('--price',help='Buy/Sell at price')
     parser.add_argument('--govt',help='Government password')    
     parser.add_argument('--url', default='http://rest-api:8008', help='Sawtooth REST API URL')
@@ -476,7 +529,7 @@ def main():
     elif args.action == 'getDetails':
         LandRegistry = get_LandRegistry(args.reg_no, args.url)
         if LandRegistry:
-            print(f"comple details json form: {LandRegistry}")
+            #print(f"comple details json form: {LandRegistry}")
             print("Land Registry num: ",LandRegistry['reg_no'])
             print("Owner: ",LandRegistry['owner'])
             print("Land Details: ",LandRegistry['det'])
@@ -485,10 +538,17 @@ def main():
             print("LandRegistry not found.")
             print("check registration num proporly")
     ### my functions starts
+    
     elif args.action == 'LockAsset':
-        LockAsset_LandRegistry(args.reg_no, args.owner, args.private_key, args.url)
+        
+        LockAsset_LandRegistry(args.reg_no, args.owner,args.private_key,args.new_owner_smc,args.url,args.time_limit)
+        #LockAsset_LandRegistry(args.reg_no, args.owner, hash(args.private_key),args.new_owner_smc,args.url)
     elif args.action == 'ClaimAsset':
-        ClaimAsset_LandRegistry(args.reg_no, args.new_owner,args.private_key,args.secret_key, args.url)
+        
+        ClaimAsset_LandRegistry(args.reg_no, args.new_owner,args.private_key,args.secret_key,args.current_owner_smc,args.url)
+    elif args.action == 'RefundAsset':
+        
+        RefundAsset_LandRegistry(args.reg_no, args.new_owner, args.private_key,args.current_owner_smc,args.url)
     ### my functions ends
         
 
