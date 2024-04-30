@@ -33,9 +33,17 @@ python3 client.py getDetails --reg-no 12
 python3 client.py setPrice --reg-no 12 --price 10234 --owner owner1 --private-key owner1
 python3 client.py getDetails --reg-no 12
 sawtooth block list --url http://rest-api:8008
-python3 client.py LockAsset --reg-no 12 --owner owner1 --private-key owner1 --new-owner-smc suman --time-limit 500
+python3 client.py LockAsset --reg-no 12 --owner owner1 --private-key owner1 --destination-owner owner2 --hash-value pitla --time-limit 100
 python3 client.py getDetails --reg-no 12
-python3 client.py ClaimAsset --reg-no 12 --new-owner owner2 --private-key owner2  --secret-key owner1 --current-owner-smc suman
+python3 client.py ClaimAsset --reg-no 12 --new-owner owner2 --private-key owner2  --secret-key pitla
 python3 client.py getDetails --reg-no 12
-python3 client.py RefundAsset --reg-no 12 --new-owner owner1 --private-key owner1 --current-owner-smc suman
+python3 client.py RefundAsset --reg-no 12 --new-owner owner1 --private-key owner1 --secret-key pitla 
 python3 client.py getDetails --reg-no 12
+
+
+
+#optional
+sawtooth block show  block-id --url http://rest-api:8008
+python3 client.py getTransactionHistory --reg-no <registry_number> --url <sawtooth_rest_api_url>
+python3 client.py getByBlockId --block-id 49ad0406f1d7a075cd75adff426de78d3edc763a454f0f2e97815013dd0f63353c7425dbe5bdb9d10569ab6d7050ca11a23d41d2bbfd20733ccdff76349c10af --url http://rest-api:8008
+python3 client.py getByTxnId --transaction-id 156 --url http://rest-api:8008

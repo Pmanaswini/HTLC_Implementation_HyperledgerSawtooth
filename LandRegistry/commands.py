@@ -18,15 +18,15 @@ commands = [
     "python3 client.py setPrice --reg-no 12 --price 10234 --owner owner1 --private-key owner1",
     "python3 client.py getDetails --reg-no 12",
     "sawtooth block list --url http://rest-api:8008",
-    "python3 client.py LockAsset --reg-no 12 --owner owner1 --private-key owner1 --new-owner-smc suman --time-limit 500",
+    "python3 client.py LockAsset --reg-no 12 --owner owner1 --private-key owner1 --destination-owner owner2 --hash-value pitla --time-limit 200",
     "python3 client.py getDetails --reg-no 12",
-    "python3 client.py ClaimAsset --reg-no 12 --new-owner owner2 --private-key owner2  --secret-key owner1 --current-owner-smc suman",
+    "python3 client.py ClaimAsset --reg-no 12 --new-owner owner2 --private-key owner2  --secret-key pitla",
     "python3 client.py getDetails --reg-no 12",
-    "python3 client.py RefundAsset --reg-no 12 --new-owner owner1 --private-key owner1 --current-owner-smc suman",
+    "python3 client.py RefundAsset --reg-no 12 --new-owner owner1 --private-key owner1 --secret-key pitla",
     "python3 client.py getDetails --reg-no 12"
 ]
 
 if __name__ == "__main__":
     for command in commands:
         execute_command(command)
-        time.sleep(3)
+        time.sleep(7)
