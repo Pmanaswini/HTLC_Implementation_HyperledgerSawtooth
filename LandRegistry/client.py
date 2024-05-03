@@ -11,6 +11,7 @@ from sawtooth_signing.secp256k1 import Secp256k1PrivateKey
 from sawtooth_sdk.protobuf.transaction_pb2 import TransactionHeader, Transaction
 from sawtooth_sdk.protobuf.batch_pb2 import Batch, BatchHeader, BatchList
 import time
+import pickle
 
 NAMESPACE = hashlib.sha512('LandRegistry'.encode('utf-8')).hexdigest()[0:6]
 URL='http://rest-api:8008'
@@ -22,14 +23,18 @@ def _hash(data):
 
 
 def _get_keyfile(customerName):
-        '''Get the private key for a customer.'''
-        home = os.path.expanduser("~")
-        key_dir = os.path.join(home, ".sawtooth", "keys")
+    '''Get the private key for a customer.'''
+    home = os.path.expanduser("~")
+    key_dir = os.path.join(home, ".sawtooth", "keys")
+    key_file = '{}/{}.priv'.format(key_dir, customerName)
 
-        return '{}/{}.priv'.format(key_dir, customerName)
+    if not os.path.exists(key_file):
+        return None 
+    return key_file
 
 def create_LandRegistry(reg_no, det, owner, private_key, url):
     # Prepare the transaction payload
+    hashed_private_key=_hash(private_key.encode('utf-8'))[0:64]
     payload = {
     
         'operation':'register',
@@ -37,7 +42,14 @@ def create_LandRegistry(reg_no, det, owner, private_key, url):
         'det': det,
         'owner': owner,
         'price': -1,
-        'private_key': private_key            
+        'private_key':hashed_private_key,
+        'hash_value1':None,
+        'hash_value2':None,
+        'destination_owner':None,
+        'time_limit':0,
+        'lock_status':False,
+        'orginal_owner':owner,
+
     }
     #checking the registry number already existed or not
     if get_LandRegistry(reg_no,URL) is not None:
@@ -46,6 +58,10 @@ def create_LandRegistry(reg_no, det, owner, private_key, url):
     else:
          
         reg_no=_hash(reg_no.encode('utf-8'))[0:64]
+        client_file=_get_keyfile(private_key)
+        if client_file is None:
+            print("User is not existed in the blockchain network,please generate private and public keys")
+            return
         file_temp= open(_get_keyfile(private_key))
         privateKeyStr= file_temp.read().strip()
         privateKey = Secp256k1PrivateKey.from_hex(privateKeyStr)
@@ -61,6 +77,7 @@ def create_LandRegistry(reg_no, det, owner, private_key, url):
                 .new_signer(private_temp)
         publicKey_temp = signer_temp.get_public_key().as_hex()
 
+        transaction_id=None
         # Create a transaction header
         transaction_header = TransactionHeader(
             signer_public_key=publicKey,
@@ -82,6 +99,8 @@ def create_LandRegistry(reg_no, det, owner, private_key, url):
         batch_header = BatchHeader(
             signer_public_key=publicKey_temp,
             transaction_ids=[transaction.header_signature]).SerializeToString()
+        #ransaction_id=batch_header[transaction_ids]
+            
 
         # Create a batch
         batch = Batch(
@@ -103,7 +122,7 @@ def create_LandRegistry(reg_no, det, owner, private_key, url):
         #print("batcher_publickey:",publicKey_temp)
         #print("transaction details:",transaction)
         print("Land Registered successfully in LandRegistry")
-        print("generated id:",NAMESPACE + reg_no)
+        #print("Transaction_Header id:",transaction_id)
         submit_batch(url, batch_list_bytes)
 
 
@@ -116,7 +135,7 @@ def setPrice_LandRegistry(reg_no, price,owner, private_key, url):
     }
     LandRegistry = get_LandRegistry(reg_no, URL)
     #print("LandRegistry:",LandRegistry['key'],"privatekey:",private_key)
-    if LandRegistry['owner']!=owner:
+    if LandRegistry['private_key']!=_hash(private_key.encode('utf-8'))[0:64]:
         print("Unauthorized Access")
         return
     
@@ -258,19 +277,27 @@ def buyPrice_LandRegistry(reg_no, price,new_owner, private_key, url):
     submit_batch(url, batch_list_bytes)
 
 #########My code starts####################
-def LockAsset_LandRegistry(reg_no, owner, private_key,new_owner_smc, url,time_limit):
+def LockAsset_LandRegistry(reg_no, owner, private_key,destination_owner, hash_value1,time_limit,url,hash_value2=None,):
     # Prepare the transaction payload
+    if hash_value2 is not None:
+        hash_value2=_hash(hash_value2.encode('utf-8'))[0:64]
     payload = {
         'operation':'LockAsset',    
         'reg_no': reg_no,
         'owner': owner,
         'private_key':_hash(private_key.encode('utf-8'))[0:64],
-        'new_owner_smc':new_owner_smc,
-        'time_limit':time_limit
+        'destination_owner':destination_owner,
+        'hash_value1':_hash(hash_value1.encode('utf-8'))[0:64],
+        'hash_value2':hash_value2,
+        'time_limit':time_limit,
     }
     LandRegistry = get_LandRegistry(reg_no, URL)
-    print("land details:",LandRegistry)
-    if LandRegistry['private_key']!=private_key:
+    #print("land details:",LandRegistry)
+
+    if LandRegistry is None:
+        print("LandRegistry not found")
+        return
+    if LandRegistry['private_key']!=_hash(private_key.encode('utf-8'))[0:64]:
          print("Unauthorized Access")
          return
     print(f"Land being locked successfully by {owner}")
@@ -329,21 +356,23 @@ def LockAsset_LandRegistry(reg_no, owner, private_key,new_owner_smc, url,time_li
     submit_batch(url, batch_list_bytes)
 
 
-def ClaimAsset_LandRegistry(reg_no, new_owner, private_key, secret_key,current_owner_smc, url):
+def ClaimAsset_LandRegistry(reg_no, new_owner, private_key, secret_key1,url,secret_key2=None):
     # Prepare the transaction payload
+    if secret_key2 is not None:
+         secret_key2=_hash(secret_key2.encode('utf-8'))[0:64]
     payload = {
-        'operation':'ClaimAsset',    
+        'operation':'ClaimAsset',
         'reg_no': reg_no,
         'new_owner': new_owner,
-        'private_key':private_key,
-        'secret_key':secret_key,
-        'current_owner_smc':current_owner_smc
+        'private_key':_hash(private_key.encode('utf-8'))[0:64],
+        'secret_key1':_hash(secret_key1.encode('utf-8'))[0:64],
+        'secret_key2':secret_key2,
     }
     LandRegistry = get_LandRegistry(reg_no, URL)
     if LandRegistry is None:
          print("LandRegistry not found")
          return
-    print("Request sent to Validator for Claiming the Asset")
+    print("Request sent to Validator for Claiming the Asset,check the status by getDetails function")
     reg_no=_hash(reg_no.encode('utf-8'))[0:64]
     file_temp= open(_get_keyfile(private_key))
     privateKeyStr= file_temp.read().strip()
@@ -397,20 +426,25 @@ def ClaimAsset_LandRegistry(reg_no, new_owner, private_key, secret_key,current_o
     submit_batch(url, batch_list_bytes)
 
 
-def RefundAsset_LandRegistry(reg_no, new_owner, private_key,current_owner_smc,url):
+def RefundAsset_LandRegistry(reg_no, new_owner, private_key,secret_key1,url,secret_key2=None):
     # Prepare the transaction payload
+
+    if secret_key2 is not None:
+         secret_key2=_hash(secret_key2.encode('utf-8'))[0:64]
     payload = {
         'operation':'RefundAsset',    
         'reg_no': reg_no,
         'new_owner': new_owner,
-        'private_key':private_key,
-        'current_owner_smc':current_owner_smc
+        'private_key':_hash(private_key.encode('utf-8'))[0:64],
+        'secret_key1':_hash(secret_key1.encode('utf-8'))[0:64],
+        'secret_key2':secret_key2,
+            
     }
     LandRegistry = get_LandRegistry(reg_no, URL)
     if LandRegistry is None:
          print("LandRegistry not found")
          return
-    print("Request sent to Validator for Refunding the Asset")
+    print("Request sent to Validator for Refunding the Asset,check the status by getDetails function")
     reg_no=_hash(reg_no.encode('utf-8'))[0:64]
     file_temp= open(_get_keyfile(private_key))
     privateKeyStr= file_temp.read().strip()
@@ -462,6 +496,26 @@ def RefundAsset_LandRegistry(reg_no, new_owner, private_key,current_owner_smc,ur
     
     batch_list_bytes = batch_list.SerializeToString()
     submit_batch(url, batch_list_bytes)
+
+
+
+
+
+# Get transaction details
+def get_transaction_details(transaction_id, url):
+    response = requests.get(f'{url}/transactions/{transaction_id}')
+    data = response.json()
+
+    if 'data' in data:
+        # Decode the base64 encoded payload
+        payload = base64.b64decode(data['data']['payload']).decode('utf-8')
+        # Load the payload as JSON
+        payload = json.loads(payload)
+        return payload
+    else:
+        return None
+    
+
 
 #########My code ends####################
 
@@ -500,18 +554,21 @@ def submit_batch(url, batch_list_bytes):
 
 def main():
     parser = argparse.ArgumentParser(description='LandRegistry Client')
-    parser.add_argument('action', choices=['register', 'setPrice','buyPrice', 'getDetails','LockAsset','ClaimAsset','RefundAsset'], help='LandRegistry action')
+    parser.add_argument('action', choices=['register', 'setPrice','buyPrice', 'getDetails','LockAsset','ClaimAsset','RefundAsset','getByTxnId'], help='LandRegistry action')
     parser.add_argument('--reg-no', help='registry no.')
     parser.add_argument('--det', help='Land details no.')    
     parser.add_argument('--owner', help='Owner')
     parser.add_argument('--new-owner', help='New owner')
     parser.add_argument('--private-key', help='Private key')
-    parser.add_argument('--new-owner-smc', help='New owner smc')
-    parser.add_argument('--secret-key', help='Secret key')
-    parser.add_argument('--current-owner-smc', help='current Smart contract owner name')
+    parser.add_argument('--destination-owner', help='Destination owner')
+    parser.add_argument('--secret-key1', help='Secret key1')
+    parser.add_argument('--secret-key2', help='Secret key2')
+    parser.add_argument('--hash-value1', help='Hash value1 For one way lock')
+    parser.add_argument('--hash-value2', help='Hash value2 For two way lock')
     parser.add_argument('--time-limit', help='Time limit for the transaction')
     parser.add_argument('--price',help='Buy/Sell at price')
-    parser.add_argument('--govt',help='Government password')    
+    parser.add_argument('--govt',help='Government password')
+    parser.add_argument('--transaction-id', help='Transaction ID')
     parser.add_argument('--url', default='http://rest-api:8008', help='Sawtooth REST API URL')
     args = parser.parse_args()
     #print("argments are :",args)
@@ -529,10 +586,11 @@ def main():
     elif args.action == 'getDetails':
         LandRegistry = get_LandRegistry(args.reg_no, args.url)
         if LandRegistry:
-            #print(f"comple details json form: {LandRegistry}")
+            #print(f"comple details in json form: {LandRegistry}")
             print("Land Registry num: ",LandRegistry['reg_no'])
             print("Owner: ",LandRegistry['owner'])
             print("Land Details: ",LandRegistry['det'])
+            print("Lock Status: ",LandRegistry['lock_status'])
             print("Price: ",LandRegistry['price'])                                
         else:
             print("LandRegistry not found.")
@@ -541,14 +599,24 @@ def main():
     
     elif args.action == 'LockAsset':
         
-        LockAsset_LandRegistry(args.reg_no, args.owner,args.private_key,args.new_owner_smc,args.url,args.time_limit)
-        #LockAsset_LandRegistry(args.reg_no, args.owner, hash(args.private_key),args.new_owner_smc,args.url)
+        LockAsset_LandRegistry(args.reg_no, args.owner,args.private_key,args.destination_owner,args.hash_value1,args.time_limit,args.url,args.hash_value2)
+        
     elif args.action == 'ClaimAsset':
         
-        ClaimAsset_LandRegistry(args.reg_no, args.new_owner,args.private_key,args.secret_key,args.current_owner_smc,args.url)
+        ClaimAsset_LandRegistry(args.reg_no, args.new_owner,args.private_key,args.secret_key1,args.url,args.secret_key2)
     elif args.action == 'RefundAsset':
         
-        RefundAsset_LandRegistry(args.reg_no, args.new_owner, args.private_key,args.current_owner_smc,args.url)
+        RefundAsset_LandRegistry(args.reg_no, args.new_owner, args.private_key,args.secret_key1,args.url,args.secret_key2)
+
+
+    elif args.action == 'getByTxnId':
+        transaction = get_transaction_details(args.transaction_id, args.url)
+        if transaction:
+            print(transaction)
+        else:
+            print("No transaction found for the given transaction ID.")
+
+    
     ### my functions ends
         
 

@@ -1,10 +1,12 @@
+Make sure you are in the directory of:HTLC_IMPLEMENTATION_HYPERLEDGERSAWTOOTH
+
 Terminal 1:
 
 sudo docker-compose -f sawtooth-default.yaml up
  
  
  
- Terminal 2:
+Terminal 2:
  
 sudo docker exec -it sawtooth-shell-default bash
 cd LandRegistry
@@ -33,9 +35,17 @@ python3 client.py getDetails --reg-no 12
 python3 client.py setPrice --reg-no 12 --price 10234 --owner owner1 --private-key owner1
 python3 client.py getDetails --reg-no 12
 sawtooth block list --url http://rest-api:8008
-python3 client.py LockAsset --reg-no 12 --owner owner1 --private-key owner1 --new-owner-smc suman --time-limit 500
+python3 client.py LockAsset --reg-no 12 --owner owner1 --private-key owner1 --destination-owner owner2 --hash-value1 pitla --time-limit 100 --hash-value2 bitla
 python3 client.py getDetails --reg-no 12
-python3 client.py ClaimAsset --reg-no 12 --new-owner owner2 --private-key owner2  --secret-key owner1 --current-owner-smc suman
+python3 client.py ClaimAsset --reg-no 12 --new-owner owner2 --private-key owner2  --secret-key1 pitla --secret-key2 bitla
 python3 client.py getDetails --reg-no 12
-python3 client.py RefundAsset --reg-no 12 --new-owner owner1 --private-key owner1 --current-owner-smc suman
+python3 client.py RefundAsset --reg-no 12 --new-owner owner1 --private-key owner1 --secret-key1 pitla --secret-key2 bitla
 python3 client.py getDetails --reg-no 12
+
+
+
+#optional
+sawtooth block show  block-id --url http://rest-api:8008
+python3 client.py getTransactionHistory --reg-no <registry_number> --url <sawtooth_rest_api_url>
+python3 client.py getByBlockId --block-id 49ad0406f1d7a075cd75adff426de78d3edc763a454f0f2e97815013dd0f63353c7425dbe5bdb9d10569ab6d7050ca11a23d41d2bbfd20733ccdff76349c10af --url http://rest-api:8008
+python3 client.py getByTxnId --transaction-id abb1afd388d03c27a26cf3b7b741f701b1afea8a5e4211d32115bb5e80a832f867167da6296f5ad5381d5c48f1eac09041e935a966fd6fa08055ef6a4c2e4b8e --url http://rest-api:8008
