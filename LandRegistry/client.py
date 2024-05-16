@@ -277,7 +277,7 @@ def buyPrice_LandRegistry(reg_no, price,new_owner, private_key, url):
     submit_batch(url, batch_list_bytes)
 
 #########My code starts####################
-def LockAsset_LandRegistry(reg_no, owner, private_key,destination_owner, hash_value1,time_limit,url,hash_value2=None,):
+def LockAsset_LandRegistry(reg_no, owner, private_key,destination_owner, hash_value1,time_limit,url,hash_value2=None):
     # Prepare the transaction payload
     if hash_value2 is not None:
         hash_value2=_hash(hash_value2.encode('utf-8'))[0:64]
@@ -426,19 +426,14 @@ def ClaimAsset_LandRegistry(reg_no, new_owner, private_key, secret_key1,url,secr
     submit_batch(url, batch_list_bytes)
 
 
-def RefundAsset_LandRegistry(reg_no, new_owner, private_key,secret_key1,url,secret_key2=None):
+def RefundAsset_LandRegistry(reg_no,private_key,url):
     # Prepare the transaction payload
 
-    if secret_key2 is not None:
-         secret_key2=_hash(secret_key2.encode('utf-8'))[0:64]
     payload = {
         'operation':'RefundAsset',    
         'reg_no': reg_no,
-        'new_owner': new_owner,
         'private_key':_hash(private_key.encode('utf-8'))[0:64],
-        'secret_key1':_hash(secret_key1.encode('utf-8'))[0:64],
-        'secret_key2':secret_key2,
-            
+        
     }
     LandRegistry = get_LandRegistry(reg_no, URL)
     if LandRegistry is None:
@@ -606,7 +601,7 @@ def main():
         ClaimAsset_LandRegistry(args.reg_no, args.new_owner,args.private_key,args.secret_key1,args.url,args.secret_key2)
     elif args.action == 'RefundAsset':
         
-        RefundAsset_LandRegistry(args.reg_no, args.new_owner, args.private_key,args.secret_key1,args.url,args.secret_key2)
+        RefundAsset_LandRegistry(args.reg_no,args.private_key,args.url)
 
 
     elif args.action == 'getByTxnId':

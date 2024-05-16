@@ -238,10 +238,8 @@ class LandRegistryTransactionHandler(TransactionHandler):
         data = json.loads(payload)
         #required information
         reg_no = data['reg_no']
-        new_owner = data['new_owner']
         private_key = data['private_key']
-        secret_key1 = data['secret_key1']
-        secret_key2 = data['secret_key2']
+    
         #calculating the current time
         current_time=int(time.time())
 
@@ -254,35 +252,20 @@ class LandRegistryTransactionHandler(TransactionHandler):
         if LandRegistry['lock_status']==False:
             LOGGER.info(f"Asset is not locked by orginal owner")
             return
-        if LandRegistry['orginal_owner']!=new_owner:
-            LOGGER.info(f"Asset orginal owner is not matching with new owner,because refund is possible only to the orginal owner.")
-            return
-        #checking the secret key is matching or not
-        if LandRegistry['hash_value1']!=secret_key1:
-            LOGGER.info(f"secret key is not matching")
-            return
-        
-        if LandRegistry['hash_value2'] is not None:
-            if secret_key2 is None:
-                LOGGER.info(f"secret key2 is not provided,please give along with secret key1")
-                return
-            elif LandRegistry['hash_value2']!=secret_key2:
-                LOGGER.info(f"secret key2 is not matching")
-                return
-            
+    
         #checking time limit exceed or not
         if LandRegistry['time_limit']>current_time:
-            LOGGER.info(f"not possible refund the asset before time limit exceed.")
+            LOGGER.info(f"not possible to refund the asset before time limit exceed.")
             return
         
         #transfering the ownership
         LandRegistry['hash_value']=None
-        LandRegistry['owner'] = new_owner
+        LandRegistry['owner'] = LandRegistry['orginal_owner']
         LandRegistry['destination_owner']=None
         LandRegistry['private_key'] = private_key
         LandRegistry['time_limit']=0
         LandRegistry['lock_status'] = False
-        LOGGER.info(f"Asset reg No:{reg_no} Refunded by the {new_owner} successfully")
+        LOGGER.info(f"Asset reg No:{reg_no} Refunded to the {LandRegistry['orginal_owner']} successfully")
         _set_LandRegistry(context, reg_no, LandRegistry)
         
 

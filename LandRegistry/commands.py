@@ -22,7 +22,7 @@ commands = [
     "python3 client.py getDetails --reg-no 12",
     "python3 client.py ClaimAsset --reg-no 12 --new-owner owner2 --private-key owner2  --secret-key1 pitla --secret-key2 bitla",
     "python3 client.py getDetails --reg-no 12",
-    "python3 client.py RefundAsset --reg-no 12 --new-owner owner1 --private-key owner1 --secret-key1 pitla --secret-key2 bitla",
+    "python3 client.py RefundAsset --reg-no 12 --private-key owner1 ",
     "python3 client.py getDetails --reg-no 12"
 ]
 
